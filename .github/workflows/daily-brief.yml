@@ -59,7 +59,8 @@ jobs:
             printf 'ok\n' > smoke-status.txt
           else
             printf 'failed: ' > smoke-status.txt
-            head -n 1 /tmp/brief-smoke.err >> smoke-status.txt
+            tail -n 1 /tmp/brief-smoke.err >> smoke-status.txt
+            tail -n 3 /tmp/brief-smoke.txt >> smoke-status.txt
           fi
       - name: Save smoke result for review
         if: ${{ github.event_name == 'push' }}

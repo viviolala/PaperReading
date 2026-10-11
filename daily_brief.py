@@ -322,7 +322,15 @@ def model_json(instruction: str, inputs: dict) -> dict:
         )
         try:
             with urlopen(request, timeout=120) as response:
-                result = json.load(response)
+                raw = response.read()
+                try:
+                    result = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    content_type = response.headers.get("Content-Type", "unknown")
+                    raise RuntimeError(
+                        f"GitHub Models returned invalid JSON (HTTP {response.status}, "
+                        f"content type {content_type}, {len(raw)} bytes)"
+                    ) from exc
             break
         except HTTPError as exc:
             detail = exc.read(1200).decode("utf-8", errors="replace")
@@ -330,7 +338,10 @@ def model_json(instruction: str, inputs: dict) -> dict:
                 payload.pop("response_format")
                 continue
             raise RuntimeError(f"GitHub Models returned HTTP {exc.code}: {detail[:300]}") from exc
-    content = result["choices"][0]["message"]["content"].strip()
+    try:
+        content = result["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError, TypeError, AttributeError) as exc:
+        raise RuntimeError("GitHub Models response omitted chat content") from exc
     if content.startswith("```"):
         content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content)
     try:
@@ -518,8 +529,10 @@ def main() -> int:
     end = dt.datetime.now(SGT)
     start = end - dt.timedelta(hours=24)
     state = load_state()
+    print("Checking Crossref and official bioRxiv records...", flush=True)
     journals, journal_errors = collect_journals(start, end, set(state["journal_dois"]))
     preprints, preprint_errors = collect_preprints(start, end, set(state["preprint_versions"]))
+    print(f"Source search returned {len(journals)} journal and {len(preprints)} bioRxiv candidates.", flush=True)
     if preprint_errors:
         raise RuntimeError("bioRxiv official search was incomplete; cannot claim a zero-preprint day")
     if len(journal_errors) == len(QUERIES) + 1:
@@ -540,6 +553,7 @@ def main() -> int:
         errors.append(f"{blocked} 篇期刊候选的出版社页面无法核验，已排除")
     checked = checked[:8]
     preprints = preprints[:8]
+    print(f"Verified {len(checked)} primary publisher pages; preparing GitHub Models analysis.", flush=True)
     for item in preprints:
         try:
             versions = get_json(f"https://api.biorxiv.org/details/biorxiv/{quote(item['doi'], safe='/')}").get("collection", [])
