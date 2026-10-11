@@ -1,6 +1,12 @@
 name: Daily literature brief
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - daily_brief.py
+      - tests/**
+      - .github/workflows/daily-brief.yml
   schedule:
     # 08:00 Asia/Singapore. GitHub may start scheduled jobs a little late;
     # the script computes its 24-hour window from the actual start time.
@@ -39,12 +45,35 @@ jobs:
       - name: Test source and report checks
         run: python -m unittest discover -s tests -v
       - name: Prepare and deliver briefing
+        if: ${{ github.event_name != 'push' }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
             python daily_brief.py --dry-run
           else
             python daily_brief.py
           fi
+      - name: Smoke test cloud sources and GitHub Models without email
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          if python daily_brief.py --dry-run > /tmp/brief-smoke.txt 2> /tmp/brief-smoke.err; then
+            printf 'ok\n' > smoke-status.txt
+          else
+            printf 'failed: ' > smoke-status.txt
+            head -n 1 /tmp/brief-smoke.err >> smoke-status.txt
+          fi
+      - name: Save smoke result for review
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add smoke-status.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "Record cloud smoke test result"
+            git push
+          fi
+      - name: Require successful smoke test
+        if: ${{ github.event_name == 'push' }}
+        run: grep -qx 'ok' smoke-status.txt
       - name: Save deduplication history after email succeeds
         if: ${{ success() && (github.event_name == 'schedule' || inputs.dry_run == false) }}
         run: |
