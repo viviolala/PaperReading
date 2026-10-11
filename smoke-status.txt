@@ -1,4 +1,5 @@
-failed: Daily briefing failed: GitHub Models returned invalid JSON (HTTP 200, content type text/plain, 4 bytes)
+failed: Daily briefing failed: GitHub Models returned invalid JSON (HTTP 200, content type text/plain, 4 bytes, prefix hex 4f4b0d0a)
 Checking Crossref and official bioRxiv records...
 Source search returned 20 journal and 6 bioRxiv candidates.
 Verified 0 primary publisher pages; preparing GitHub Models analysis.
+Publisher page failures: HTTP 403; HTTP 403; HTTP 403; HTTP 403; HTTP 403
