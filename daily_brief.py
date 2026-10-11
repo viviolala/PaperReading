@@ -274,6 +274,7 @@ def fetch_primary_page(candidate: dict) -> bool:
         request = Request(candidate["article_url"], headers={"User-Agent": USER_AGENT})
         with urlopen(request, timeout=25) as response:
             if "html" not in response.headers.get("Content-Type", ""):
+                candidate["page_failure"] = f"non-HTML content ({response.headers.get('Content-Type', 'unknown')})"
                 return False
             raw = response.read(1_000_000).decode("utf-8", errors="replace")
             candidate["article_url"] = response.url
@@ -281,6 +282,7 @@ def fetch_primary_page(candidate: dict) -> bool:
         parser.feed(raw)
         text = " ".join(parser.text)
         if candidate["doi"] not in raw.lower() and candidate["title"].lower()[:40] not in text.lower():
+            candidate["page_failure"] = "publisher page did not contain the paper DOI or title"
             return False
         snippets = []
         for term in ("abstract", "received", "revised", "accepted", "published", "correspondence", "impact factor", "contributed equally", "equal contribution", "affiliations"):
@@ -290,7 +292,11 @@ def fetch_primary_page(candidate: dict) -> bool:
                 snippets.append(text[max(0, match.start() - 80):match.start() + length])
         candidate["primary_evidence"] = "\n".join(snippets + parser.meta[:30])[:3200]
         return True
-    except (HTTPError, URLError, TimeoutError, ValueError):
+    except HTTPError as exc:
+        candidate["page_failure"] = f"HTTP {exc.code}"
+        return False
+    except (URLError, TimeoutError, ValueError) as exc:
+        candidate["page_failure"] = type(exc).__name__
         return False
 
 
@@ -329,7 +335,7 @@ def model_json(instruction: str, inputs: dict) -> dict:
                     content_type = response.headers.get("Content-Type", "unknown")
                     raise RuntimeError(
                         f"GitHub Models returned invalid JSON (HTTP {response.status}, "
-                        f"content type {content_type}, {len(raw)} bytes)"
+                        f"content type {content_type}, {len(raw)} bytes, prefix hex {raw[:40].hex()})"
                     ) from exc
             break
         except HTTPError as exc:
@@ -539,11 +545,13 @@ def main() -> int:
         raise RuntimeError("All Crossref searches failed; cannot claim a zero-journal day")
     checked = []
     blocked = 0
+    page_failures = []
     for item in journals[:12]:
         if fetch_primary_page(item):
             checked.append(item)
         else:
             blocked += 1
+            page_failures.append(item.get("page_failure", "unknown failure"))
     errors = []
     if journal_errors:
         errors.append(f"Crossref {len(journal_errors)}/{len(QUERIES) + 1} 个主题查询失败")
@@ -554,6 +562,8 @@ def main() -> int:
     checked = checked[:8]
     preprints = preprints[:8]
     print(f"Verified {len(checked)} primary publisher pages; preparing GitHub Models analysis.", flush=True)
+    if page_failures:
+        print("Publisher page failures: " + "; ".join(page_failures[:5]), flush=True)
     for item in preprints:
         try:
             versions = get_json(f"https://api.biorxiv.org/details/biorxiv/{quote(item['doi'], safe='/')}").get("collection", [])
