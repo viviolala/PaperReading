@@ -1,1 +1,4 @@
-failed: Daily briefing failed: Expecting value: line 1 column 1 (char 0)
+failed: Daily briefing failed: GitHub Models returned invalid JSON (HTTP 200, content type text/plain, 4 bytes)
+Checking Crossref and official bioRxiv records...
+Source search returned 20 journal and 6 bioRxiv candidates.
+Verified 0 primary publisher pages; preparing GitHub Models analysis.
